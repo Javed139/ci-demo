@@ -1,0 +1,134 @@
+# ═══════════════════════════════════════════════════════════════════
+#  Task 1 – Quality-Controlled CI Pipeline
+#
+#  Job graph:
+#
+#    ┌──────────┐    ┌──────────────┐
+#    │   lint   │    │ security-scan│
+#    └────┬─────┘    └──────┬───────┘
+#         │                 │
+#         └────────┬────────┘
+#                  ▼
+#             ┌─────────┐
+#             │  test   │
+#             └────┬────┘
+#                  ▼
+#             ┌─────────┐
+#             │  build  │   ← runs only if ALL prior jobs pass
+#             └─────────┘
+# ═══════════════════════════════════════════════════════════════════
+name: CI – Quality Gates
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  #  JOB 1 – Lint
+  #  Enforces code-style rules via ESLint. Any style violation
+  #  immediately fails the pipeline before wasting compute on tests.
+  # ──────────────────────────────────────────────────────────────
+  lint:
+    name: 🔍 Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  # ──────────────────────────────────────────────────────────────
+  #  JOB 2 – Security Scan  (runs in PARALLEL with lint)
+  #  Uses Trivy to scan the filesystem for known CVEs and
+  #  misconfigurations. The pipeline fails on HIGH/CRITICAL findings.
+  # ──────────────────────────────────────────────────────────────
+  security-scan:
+    name: 🛡️ Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'          # Fail the pipeline on findings
+          format: 'table'
+
+  # ──────────────────────────────────────────────────────────────
+  #  JOB 3 – Unit Tests  (needs lint AND security-scan to pass)
+  # ──────────────────────────────────────────────────────────────
+  test:
+    name: 🧪 Unit Tests
+    runs-on: ubuntu-latest
+    needs: [ lint, security-scan ]   # Quality gate: both must pass first
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+  # ──────────────────────────────────────────────────────────────
+  #  JOB 4 – Build  (runs ONLY if ALL previous jobs pass)
+  #  Packages the application and uploads the artifact so later
+  #  CD stages can deploy exactly what was tested.
+  # ──────────────────────────────────────────────────────────────
+  build:
+    name: 📦 Build & Package
+    runs-on: ubuntu-latest
+    needs: [ test ]                  # Quality gate: tests must pass first
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install production dependencies only
+        run: npm ci --omit=dev
+
+      - name: Create deployment artifact
+        run: |
+          mkdir -p dist
+          cp -r src package.json dist/
+          echo "Build SHA: ${{ github.sha }}" > dist/build-info.txt
+          echo "Built at:  $(date -u)" >> dist/build-info.txt
+          tar -czf release-${{ github.sha }}.tar.gz dist/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build-${{ github.sha }}
+          path: release-${{ github.sha }}.tar.gz
+          retention-days: 7

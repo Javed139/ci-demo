@@ -1,0 +1,50 @@
+# ═══════════════════════════════════════════════════════════════════
+#  Task 5 – Semantic Release
+#
+#  Reads Conventional Commits on the main branch and:
+#    • Determines the next SemVer tag automatically
+#    • Generates / updates CHANGELOG.md
+#    • Creates a GitHub Release with release notes
+#    • Pushes the version tag (e.g. v1.1.0)
+#
+#  Commit type → version bump mapping:
+#    feat:              MINOR  (1.0.0 → 1.1.0)
+#    fix: / perf:       PATCH  (1.0.0 → 1.0.1)
+#    BREAKING CHANGE:   MAJOR  (1.0.0 → 2.0.0)
+# ═══════════════════════════════════════════════════════════════════
+name: Release – Semantic Versioning
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write      # Allow semantic-release to push tags & releases
+  issues: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: 🏷️ Semantic Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history for commit analysis)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # semantic-release needs the full git log
+          persist-credentials: false
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies (including semantic-release)
+        run: npm ci
+
+      - name: Run Semantic Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
