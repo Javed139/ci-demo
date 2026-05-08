@@ -1,0 +1,17 @@
+{
+  "name": "ci-demo",
+  "version": "1.0.0",
+  "description": "Lab 10 – Professional CI/CD Pipeline Demo",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node src/index.test.js",
+    "lint": "eslint src/",
+    "start": "node src/index.js"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
